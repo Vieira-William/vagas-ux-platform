@@ -5,7 +5,6 @@ databases:
     user: vagas
 
 services:
-  # Backend FastAPI
   - type: web
     name: vagas-api
     runtime: python
@@ -19,16 +18,3 @@ services:
           property: connectionString
       - key: PYTHON_VERSION
         value: 3.11.0
-
-staticSites:
-  - name: vagas-frontend
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    envVars:
-      - key: VITE_API_URL
-        value: https://vagas-api.onrender.com/api
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
