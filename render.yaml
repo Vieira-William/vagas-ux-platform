@@ -20,9 +20,8 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.0
 
-  # Frontend React (Static Site)
-  - type: static
-    name: vagas-frontend
+staticSites:
+  - name: vagas-frontend
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
