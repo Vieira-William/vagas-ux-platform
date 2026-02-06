@@ -9,7 +9,6 @@ services:
   - type: web
     name: vagas-api
     runtime: python
-    plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app.main:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
@@ -21,11 +20,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.0
 
-  # Frontend React
-  - type: web
+  # Frontend React (Static Site)
+  - type: static
     name: vagas-frontend
-    runtime: static
-    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
