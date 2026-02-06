@@ -17,10 +17,14 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS para permitir frontend local
+# CORS para permitir frontend local e produção
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://vagas-frontend.onrender.com",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
