@@ -173,11 +173,106 @@ def determinar_forma_contato(emails, links, texto):
     return 'mensagem'
 
 
+def extrair_dados_post_elemento(post_el):
+    """Extrai dados de um elemento de post do LinkedIn."""
+    try:
+        texto = post_el.text
+        if len(texto) < 50:
+            return None
+
+        if not eh_post_produto(texto):
+            return None
+
+        # Extrai todos os links do elemento HTML
+        links_elementos = post_el.find_elements(By.TAG_NAME, "a")
+
+        perfil_autor = None
+        link_vaga = None
+        links_externos = []
+        nome_autor = None
+
+        for link_el in links_elementos:
+            href = link_el.get_attribute("href") or ""
+
+            # Link do perfil do autor (primeiro link /in/ encontrado)
+            if "/in/" in href and not perfil_autor:
+                perfil_autor = href.split("?")[0]  # Remove query params
+                # Pega o nome do autor do texto do link
+                link_text = link_el.text.strip()
+                if link_text and len(link_text) > 2 and len(link_text) < 50:
+                    nome_autor = link_text
+
+            # Links externos (não LinkedIn)
+            elif href.startswith("http") and "linkedin.com" not in href:
+                link_limpo = href.split("?")[0].rstrip('.,;:!?')
+                links_externos.append(link_limpo)
+
+        # Extrai emails do texto
+        emails = extrair_emails(texto)
+
+        # Define link da vaga (prioriza links externos)
+        if links_externos:
+            link_vaga = links_externos[0]
+
+        # Extrai outros dados do texto
+        titulo = extrair_titulo_vaga(texto)
+        empresa = extrair_empresa(texto)
+        modalidade = classificar_modalidade(texto)
+        tipo_vaga = classificar_tipo_vaga(texto)
+
+        # Determina forma de contato
+        if link_vaga:
+            forma_contato = 'link'
+        elif emails:
+            forma_contato = 'email'
+        elif perfil_autor:
+            forma_contato = 'mensagem'
+        else:
+            forma_contato = 'mensagem'
+
+        # Fallback para nome do autor do texto
+        if not nome_autor:
+            linhas = texto.split('\n')
+            for linha in linhas[:3]:
+                if '•' in linha:
+                    nome_autor = linha.split('•')[0].strip()
+                    break
+
+        return {
+            "titulo": titulo,
+            "empresa": empresa,
+            "tipo_vaga": tipo_vaga,
+            "fonte": "linkedin_posts",
+            "link_vaga": link_vaga,
+            "localizacao": None,
+            "modalidade": modalidade,
+            "requisito_ingles": "nao_especificado",
+            "forma_contato": forma_contato,
+            "email_contato": emails[0] if emails else None,
+            "perfil_autor": perfil_autor,
+            "nome_autor": nome_autor,
+            "data_coleta": date.today().isoformat(),
+        }
+    except Exception as e:
+        print(f"  Erro ao extrair post: {e}")
+        return None
+
+
+def texto_pede_contato(texto):
+    """Verifica se o texto pede explicitamente para entrar em contato."""
+    texto_lower = texto.lower()
+    frases_contato = [
+        "entre em contato", "entrar em contato", "mande mensagem", "envie mensagem",
+        "fale com", "falar com", "dm", "inbox", "chama no", "me chama",
+        "entre em contacto", "manda msg", "manda mensagem"
+    ]
+    return any(frase in texto_lower for frase in frases_contato)
+
+
 def scroll_e_extrair_posts(driver, max_scrolls=30):
     """Faz scroll e extrai posts de vagas."""
     posts_coletados = []
     textos_vistos = set()
-    ultimo_count = 0
     ultimo_posts_pagina = 0
 
     print("Fazendo scroll e coletando posts...")
@@ -190,7 +285,7 @@ def scroll_e_extrair_posts(driver, max_scrolls=30):
         pass
 
     for i in range(max_scrolls):
-        # Usa Page Down para scroll (simula usuário)
+        # Usa Page Down para scroll
         try:
             body = driver.find_element(By.TAG_NAME, "body")
             for _ in range(5):
@@ -200,9 +295,28 @@ def scroll_e_extrair_posts(driver, max_scrolls=30):
             driver.execute_script("window.scrollBy(0, 1000);")
         time.sleep(1.5)
 
-        # Pega texto da página
+        # Pega texto e HTML da página
         try:
             body_text = driver.find_element(By.TAG_NAME, "body").text
+
+            # Coleta todos os links úteis da página
+            all_links = driver.find_elements(By.TAG_NAME, "a")
+            perfis_na_pagina = {}
+            links_lnkd = []  # Links encurtados do LinkedIn (vagas)
+
+            for link in all_links:
+                try:
+                    href = link.get_attribute("href") or ""
+                    # Perfis de usuários
+                    if "/in/" in href:
+                        nome = link.text.strip()
+                        if nome and len(nome) > 2 and len(nome) < 50:
+                            perfis_na_pagina[nome] = href.split("?")[0]
+                    # Links encurtados (lnkd.in) - geralmente são links de vagas
+                    elif "lnkd.in" in href:
+                        links_lnkd.append(href)
+                except:
+                    pass
         except:
             continue
 
@@ -210,7 +324,7 @@ def scroll_e_extrair_posts(driver, max_scrolls=30):
         partes = body_text.split("Publicação no feed")
 
         if i % 5 == 0:
-            print(f"  Scroll {i+1}: {len(partes)-1} posts na página, {len(posts_coletados)} vagas coletadas")
+            print(f"  Scroll {i+1}: {len(partes)-1} posts, {len(posts_coletados)} vagas, {len(links_lnkd)} links")
 
         for parte in partes[1:]:
             texto = parte.split("Gostar")[0].strip()
@@ -225,16 +339,15 @@ def scroll_e_extrair_posts(driver, max_scrolls=30):
             if not eh_post_produto(texto):
                 continue
 
-            # Extrai dados
+            # Extrai dados do texto
             emails = extrair_emails(texto)
-            links = extrair_links_externos(texto)
+            links_externos = extrair_links_externos(texto)
             titulo = extrair_titulo_vaga(texto)
             empresa = extrair_empresa(texto)
             modalidade = classificar_modalidade(texto)
             tipo_vaga = classificar_tipo_vaga(texto)
-            forma_contato = determinar_forma_contato(emails, links, texto)
 
-            # Extrai autor
+            # Extrai autor do texto
             nome_autor = None
             linhas = texto.split('\n')
             for linha in linhas[:3]:
@@ -242,25 +355,56 @@ def scroll_e_extrair_posts(driver, max_scrolls=30):
                     nome_autor = linha.split('•')[0].strip()
                     break
 
+            # Link da vaga: prioriza links externos, depois lnkd.in
+            link_vaga = None
+            if links_externos:
+                link_vaga = links_externos[0]
+            elif links_lnkd:
+                # Pega o próximo link lnkd.in disponível
+                link_vaga = links_lnkd.pop(0) if links_lnkd else None
+
+            # Perfil para contato: SÓ se o texto pedir explicitamente
+            perfil_autor = None
+            if texto_pede_contato(texto) and nome_autor:
+                nome_lower = nome_autor.lower()
+                for nome_link, url_perfil in perfis_na_pagina.items():
+                    if nome_lower in nome_link.lower() or nome_link.lower() in nome_lower:
+                        perfil_autor = url_perfil
+                        break
+
+            # Determina forma de contato
+            if link_vaga:
+                forma_contato = 'link'
+            elif emails:
+                forma_contato = 'email'
+            elif perfil_autor:
+                forma_contato = 'mensagem'
+            else:
+                forma_contato = 'indefinido'
+
+            # Só salva se tiver alguma forma de aplicar
+            if forma_contato == 'indefinido':
+                continue
+
             posts_coletados.append({
                 "titulo": titulo,
                 "empresa": empresa,
                 "tipo_vaga": tipo_vaga,
                 "fonte": "linkedin_posts",
-                "link_vaga": links[0] if links else None,
+                "link_vaga": link_vaga,
                 "localizacao": None,
                 "modalidade": modalidade,
                 "requisito_ingles": "nao_especificado",
                 "forma_contato": forma_contato,
                 "email_contato": emails[0] if emails else None,
-                "perfil_autor": None,
-                "nome_autor": nome_autor,
+                "perfil_autor": perfil_autor,
+                "nome_autor": None,  # Não precisa mais
                 "data_coleta": date.today().isoformat(),
             })
 
             print(f"  + {titulo[:40]}... ({forma_contato})")
 
-        # Para se não encontrou novos posts na página
+        # Para se não encontrou novos posts
         posts_pagina = len(partes) - 1
         if posts_pagina == ultimo_posts_pagina and i > 5:
             print("  Fim do conteúdo - sem novos posts carregados")
@@ -270,8 +414,85 @@ def scroll_e_extrair_posts(driver, max_scrolls=30):
     return posts_coletados
 
 
+def coletar_posts_brutos(max_scrolls=30, headless=False):
+    """Coleta posts brutos (texto + links) para análise com IA."""
+
+    url = "https://www.linkedin.com/search/results/content/?keywords=ux%20vaga&datePosted=%22past-24h%22&sortBy=%22date_posted%22"
+    driver = None
+    posts_brutos = []
+    textos_vistos = set()
+
+    try:
+        driver = criar_driver_com_perfil(headless=headless)
+        driver.get(url)
+        time.sleep(5)
+
+        print(f"URL: {driver.current_url}")
+        print("Coletando posts brutos...")
+
+        body = driver.find_element(By.TAG_NAME, "body")
+        body.click()
+
+        for i in range(max_scrolls):
+            # Scroll
+            for _ in range(5):
+                body.send_keys(Keys.PAGE_DOWN)
+                time.sleep(0.2)
+            time.sleep(1.5)
+
+            # Coleta texto e links
+            body_text = driver.find_element(By.TAG_NAME, "body").text
+            all_links = driver.find_elements(By.TAG_NAME, "a")
+
+            # Mapeia links por posição aproximada
+            links_pagina = []
+            for link in all_links:
+                try:
+                    href = link.get_attribute("href") or ""
+                    if "lnkd.in" in href or "/in/" in href or "/jobs/" in href:
+                        links_pagina.append(href.split("?")[0])
+                except:
+                    pass
+
+            # Divide posts
+            partes = body_text.split("Publicação no feed")
+
+            if i % 5 == 0:
+                print(f"  Scroll {i+1}: {len(partes)-1} posts, {len(posts_brutos)} coletados")
+
+            for idx, parte in enumerate(partes[1:]):
+                texto = parte.split("Gostar")[0].strip()
+                if len(texto) < 50:
+                    continue
+
+                texto_hash = hash(texto[:200])
+                if texto_hash in textos_vistos:
+                    continue
+                textos_vistos.add(texto_hash)
+
+                # Associa links próximos ao post
+                links_post = links_pagina[idx*3:(idx+1)*3] if links_pagina else []
+
+                posts_brutos.append({
+                    "id": len(posts_brutos) + 1,
+                    "texto": texto[:500],
+                    "links": links_post
+                })
+
+        print(f"\nTotal: {len(posts_brutos)} posts brutos coletados")
+        return posts_brutos
+
+    except Exception as e:
+        print(f"Erro: {e}")
+        return posts_brutos
+
+    finally:
+        if driver:
+            driver.quit()
+
+
 def coletar_vagas_linkedin_posts(max_scrolls=30, headless=False):
-    """Coleta vagas de publicações do LinkedIn."""
+    """Coleta vagas de publicações do LinkedIn (método legado sem IA)."""
 
     url = "https://www.linkedin.com/search/results/content/?keywords=ux%20vaga&datePosted=%22past-24h%22&sortBy=%22date_posted%22"
     driver = None
@@ -298,8 +519,34 @@ def coletar_vagas_linkedin_posts(max_scrolls=30, headless=False):
             driver.quit()
 
 
+def coletar_e_analisar_com_ia(max_scrolls=30, headless=False):
+    """Coleta posts e analisa com IA para extração precisa."""
+    from .analisar_com_ia import analisar_posts_com_ia
+
+    print("=== ETAPA 1: Coletando posts brutos ===")
+    posts_brutos = coletar_posts_brutos(max_scrolls, headless)
+
+    if not posts_brutos:
+        print("Nenhum post coletado")
+        return []
+
+    print(f"\n=== ETAPA 2: Analisando {len(posts_brutos)} posts com IA ===")
+    vagas = analisar_posts_com_ia(posts_brutos)
+
+    print(f"\n=== RESULTADO: {len(vagas)} vagas UX extraídas ===")
+    return vagas
+
+
 if __name__ == "__main__":
-    vagas = coletar_vagas_linkedin_posts()
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--ia":
+        # Modo com IA
+        vagas = coletar_e_analisar_com_ia()
+    else:
+        # Modo legado
+        vagas = coletar_vagas_linkedin_posts()
+
     print(f"\n{'='*50}")
     print(f"RESULTADO: {len(vagas)} vagas")
     for v in vagas[:10]:

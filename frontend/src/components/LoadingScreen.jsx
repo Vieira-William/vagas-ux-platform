@@ -11,13 +11,20 @@ export default function LoadingScreen({ onComplete, onError }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [status, setStatus] = useState(CHECKS.map(() => 'pending')); // pending, loading, success, error
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [autoRetrying, setAutoRetrying] = useState(false);
+
+  const MAX_AUTO_RETRIES = 3;
+  const RETRY_DELAY = 5000; // 5 segundos entre tentativas
 
   useEffect(() => {
     runHealthChecks();
   }, []);
 
   const runHealthChecks = async () => {
-    const newStatus = [...status];
+    const newStatus = CHECKS.map(() => 'pending');
+    setStatus(newStatus);
+    setError(null);
 
     for (let i = 0; i < CHECKS.length; i++) {
       setCurrentStep(i);
@@ -28,11 +35,19 @@ export default function LoadingScreen({ onComplete, onError }) {
         await api.get(CHECKS[i].endpoint);
         newStatus[i] = 'success';
         setStatus([...newStatus]);
-        // Pequeno delay para feedback visual
         await new Promise(r => setTimeout(r, 300));
       } catch (err) {
         newStatus[i] = 'error';
         setStatus([...newStatus]);
+
+        // Auto-retry para erros de rede (backend pode estar acordando)
+        if (err.code === 'ERR_NETWORK' && retryCount < MAX_AUTO_RETRIES) {
+          setAutoRetrying(true);
+          setRetryCount(prev => prev + 1);
+          await new Promise(r => setTimeout(r, RETRY_DELAY));
+          setAutoRetrying(false);
+          return runHealthChecks(); // Tenta novamente
+        }
 
         const errorInfo = {
           step: CHECKS[i].id,
@@ -50,6 +65,7 @@ export default function LoadingScreen({ onComplete, onError }) {
     }
 
     // Todos os checks passaram
+    setRetryCount(0);
     await new Promise(r => setTimeout(r, 500));
     onComplete?.();
   };
@@ -197,7 +213,9 @@ export default function LoadingScreen({ onComplete, onError }) {
 
         {/* Footer */}
         <p className="text-center text-xs text-gray-400 mt-6">
-          Verificando conexões...
+          {autoRetrying
+            ? `Servidor acordando... tentativa ${retryCount}/${MAX_AUTO_RETRIES}`
+            : 'Verificando conexões...'}
         </p>
       </div>
     </div>

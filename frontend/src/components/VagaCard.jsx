@@ -58,25 +58,64 @@ export default function VagaCard({ vaga, onStatusChange }) {
         </p>
       )}
 
+      {/* Autor (para LinkedIn Posts) */}
+      {vaga.nome_autor && vaga.fonte === 'linkedin_posts' && (
+        <p className="text-xs text-gray-500 mb-3">
+          Postado por: <span className="font-medium text-gray-700">{vaga.nome_autor}</span>
+        </p>
+      )}
+
       {/* Ações */}
       <div className="flex items-center justify-between pt-3 border-t">
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {vaga.link_vaga && (
             <a
               href={vaga.link_vaga}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              className="text-xs px-3 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 font-medium"
             >
               Ver vaga
             </a>
           )}
           {vaga.email_contato && (
             <a
-              href={`mailto:${vaga.email_contato}`}
+              href={`mailto:${vaga.email_contato}?subject=Candidatura: ${vaga.titulo}`}
+              className="text-xs px-3 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium"
+            >
+              Enviar Email
+            </a>
+          )}
+          {vaga.perfil_autor && (
+            <a
+              href={vaga.perfil_autor}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-medium"
+            >
+              Contatar Autor
+            </a>
+          )}
+          {/* Fallback: buscar no LinkedIn quando não tem link/email/perfil */}
+          {!vaga.link_vaga && !vaga.email_contato && !vaga.perfil_autor && vaga.nome_autor && (
+            <a
+              href={`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(vaga.nome_autor)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-medium"
+            >
+              Buscar Autor
+            </a>
+          )}
+          {/* Fallback final: buscar vaga no LinkedIn */}
+          {!vaga.link_vaga && !vaga.email_contato && !vaga.perfil_autor && !vaga.nome_autor && (
+            <a
+              href={`https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(vaga.titulo)}`}
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
             >
-              Email
+              Buscar no LinkedIn
             </a>
           )}
         </div>
